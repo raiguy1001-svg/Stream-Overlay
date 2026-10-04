@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zazaza0 Gaming Overlay</title>
+<!-- Optional web font; falls back to system fonts if offline -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&family=Teko:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /*
+    Zazaza0 Gaming — PUBG Mobile stream overlay
+    ------------------------------------------------------------
+    OBS Browser Source:
+      16:9 feed  -> Width 1920, Height 1080 (default layout)
+      9:16 feed  -> Width 1080, Height 1920, add ?layout=vertical
+    Everything sits in the black letterbox bands above and below the
+    iPhone picture, so the PUBG HUD is never covered.
+
+    URL options (add after index.html, join with &):
+      layout=vertical            vertical layout for YouTube Shorts
+      name=Zazaza0%20Gaming      channel name
+      handle=@zazaza0gaming16    handle shown on the right
+      mode=Squad%20%E2%80%A2%20Erangel   text in the top bar
+      goal=Road%20to%201K        text in the top-right
+      msgs=First|Second|Third    ticker messages, separated by |
+      platforms=YouTube|Twitch|Kick
+      bar=96                     band height in px (16:9 layout)
+      top=0                      hide the top band
+      accent=F2A900              accent colour (hex, no #)
+
+    Kill counter: right-click the source in OBS -> Interact, then
+      click the counter = +1, right-click = -1, double-click = reset
+      (or press + / - / 0 in the Interact window)
+  */
+  :root {
+    --accent: #F2A900;
+    --bar: 96px;
+    --ink: #FFFFFF;
+    --ink-2: rgba(255,255,255,0.72);
+    --panel: rgba(12,12,14,0.86);
+    --live: #FF3B30;
+    --display: "Teko", "Bahnschrift", "Arial Narrow", "Segoe UI", sans-serif;
+    --text: "Rajdhani", "Bahnschrift", "Segoe UI", Arial, sans-serif;
+  }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: transparent;   /* transparent in OBS */
+    color: var(--ink);
+    font-family: var(--text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  .band {
+    position: fixed; left: 0; right: 0;
+    height: var(--bar);
+    display: flex; align-items: center;
+    padding: 0 40px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, rgba(20,20,24,0.92), var(--panel));
+    gap: 32px;
+  }
+  .band.top    { top: 0;    border-bottom: 3px solid var(--accent); height: calc(var(--bar) * 0.62); }
+  .band.bottom { bottom: 0; border-top: 3px solid var(--accent); }
+
+  /* ---------- brand block ---------- */
+  .brand { display: flex; align-items: center; gap: 20px; flex: 0 0 auto; }
+  .live {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--live); color: #fff;
+    font: 700 22px/1 var(--text); letter-spacing: 2px;
+    padding: 8px 14px 6px; border-radius: 6px;
+  }
+  .live i {
+    width: 12px; height: 12px; border-radius: 50%; background: #fff;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.75); } }
+  .name { display: flex; flex-direction: column; line-height: 1; }
+  .name b {
+    font: 600 50px/0.9 var(--display); letter-spacing: 1.5px; text-transform: uppercase;
+  }
+  .name span {
+    font: 700 16px/1 var(--text); letter-spacing: 4px; color: var(--accent);
+    text-transform: uppercase; margin-top: 4px;
+  }
+
+  /* ---------- ticker ---------- */
+  .ticker {
+    flex: 1 1 auto; min-width: 0;
+    position: relative; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border-left: 1px solid rgba(255,255,255,0.14);
+    border-right: 1px solid rgba(255,255,255,0.14);
+  }
+  .msg {
+    position: absolute; left: 24px; right: 24px;
+    text-align: center;
+    font: 600 30px/1.1 var(--text); letter-spacing: .5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transform: translateY(14px);
+    transition: opacity .6s ease, transform .6s ease;
+  }
+  .msg.on { opacity: 1; transform: translateY(0); }
+  .msg em { font-style: normal; color: var(--accent); }
+
+  /* ---------- right block ---------- */
+  .side { display: flex; align-items: center; gap: 22px; flex: 0 0 auto; }
+  .chips { display: flex; gap: 8px; }
+  .chip {
+    font: 700 17px/1 var(--text); letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 7px 10px 5px; border-radius: 5px;
+    border: 1.5px solid rgba(255,255,255,0.35); color: var(--ink-2);
+  }
+  .uptime { text-align: right; line-height: 1; }
+  .uptime small { display: block; font: 700 13px/1 var(--text); letter-spacing: 3px; color: var(--ink-2); }
+  .uptime b { font: 500 40px/1 var(--display); letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- top band ---------- */
+  .top .tag { font: 700 22px/1 var(--text); letter-spacing: 3px; text-transform: uppercase; color: var(--ink-2); }
+  .top .tag b { color: var(--accent); }
+  .top .spacer { flex: 1; }
+  .kills {
+    display: inline-flex; align-items: center; gap: 12px;
+    cursor: pointer;
+  }
+  .kills small { font: 700 18px/1 var(--text); letter-spacing: 3px; color: var(--ink-2); }
+  .kills b {
+    font: 600 46px/1 var(--display); color: var(--accent);
+    min-width: 40px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .kills.bump b { animation: bump .45s ease; }
+  @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+
+  /* =========== VERTICAL (1080 x 1920) =========== */
+  body.vertical .band { padding: 0 48px; }
+  body.vertical .band.top {
+    height: 330px; flex-direction: column; justify-content: center; gap: 18px;
+    background: linear-gradient(180deg, rgba(12,12,14,0.92) 0%, rgba(12,12,14,0.75) 75%, rgba(12,12,14,0) 100%);
+    border-bottom: 0;
+  }
+  body.vertical .band.bottom {
+    height: 420px; flex-direction: column; justify-content: center; gap: 26px;
+    background: linear-gradient(0deg, rgba(12,12,14,0.92) 0%, rgba(12,12,14,0.75) 75%, rgba(12,12,14,0) 100%);
+    border-top: 0;
+  }
+  body.vertical .name { align-items: center; }
+  body.vertical .name b { font-size: 92px; }
+  body.vertical .name span { font-size: 24px; margin-top: 8px; }
+  body.vertical .live { font-size: 28px; padding: 10px 18px 8px; }
+  body.vertical .vrow { display: flex; align-items: center; gap: 28px; }
+  body.vertical .ticker {
+    flex: 0 0 auto; width: 100%; height: 120px;
+    border: 0; border-top: 3px solid var(--accent); border-bottom: 3px solid var(--accent);
+  }
+  body.vertical .msg { font-size: 40px; white-space: normal; line-height: 1.15; }
+  body.vertical .chip { font-size: 24px; padding: 9px 14px 7px; }
+  body.vertical .uptime b { font-size: 56px; }
+  body.vertical .kills b { font-size: 64px; }
+  body.vertical .kills small, body.vertical .top .tag { font-size: 24px; }
+</style>
+</head>
+<body>
+
+<!-- 16:9 layout -->
+<div id="h">
+  <div class="band top" id="topBand">
+    <div class="tag" id="mode"></div>
+    <div class="spacer"></div>
+    <div class="kills" id="kills" title="Click +1, right-click -1, double-click reset"><small>KILLS</small><b id="killN">0</b></div>
+    <div class="spacer"></div>
+    <div class="tag" id="goal"></div>
+  </div>
+  <div class="band bottom">
+    <div class="brand">
+      <div class="live"><i></i>LIVE</div>
+      <div class="name"><b class="jsName"></b><span>PUBG Mobile</span></div>
+    </div>
+    <div class="ticker" id="ticker"></div>
+    <div class="side">
+      <div class="chips" id="chips"></div>
+      <div class="uptime"><small>UPTIME</small><b class="jsUp">00:00:00</b></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var get = function (k, d) { var v = q.get(k); return (v === null || v === '') ? d : v; };
+
+  var cfg = {
+    vertical: get('layout', '') === 'vertical',
+    name: get('name', 'Zazaza0 Gaming'),
+    handle: get('handle', '@zazaza0gaming16'),
+    mode: get('mode', 'Squad • Classic'),
+    goal: get('goal', 'Road to 1K'),
+    platforms: get('platforms', 'YouTube|Twitch|Kick').split('|'),
+    msgs: get('msgs', '').split('|').filter(Boolean),
+    bar: parseInt(get('bar', '96'), 10) || 96,
+    top: get('top', '1') !== '0',
+    accent: get('accent', '')
+  };
+  if (!cfg.msgs.length) {
+    cfg.msgs = [
+      'Subscribe <em>' + cfg.handle + '</em>',
+      'Live now on <em>YouTube</em>, <em>Twitch</em> and <em>Kick</em>',
+      'Drop a <em>like</em> if you want the chicken dinner',
+      'Say hi in chat — I read every message'
+    ];
+  }
+
+  var root = document.documentElement;
+  root.style.setProperty('--bar', cfg.bar + 'px');
+  if (/^[0-9a-fA-F]{6}$/.test(cfg.accent)) root.style.setProperty('--accent', '#' + cfg.accent);
+
+  var esc = function (s) {
+    return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+  };
+  // Allow only <em> in custom ticker messages
+  var safeMsg = function (s) { return esc(s).replace(/&lt;(\/?)em&gt;/g, '<$1em>'); };
+
+  /* ---------- vertical re-layout ---------- */
+  if (cfg.vertical) {
+    document.body.classList.add('vertical');
+    var h = document.getElementById('h');
+    h.innerHTML =
+      '<div class="band top" id="topBand">' +
+        '<div class="vrow"><div class="live"><i></i>LIVE</div></div>' +
+        '<div class="name"><b class="jsName"></b><span>PUBG Mobile</span></div>' +
+        '<div class="vrow"><div class="tag" id="mode"></div><div class="tag" id="goal"></div></div>' +
+      '</div>' +
+      '<div class="band bottom">' +
+        '<div class="ticker" id="ticker"></div>' +
+        '<div class="vrow">' +
+          '<div class="kills" id="kills"><small>KILLS</small><b id="killN">0</b></div>' +
+          '<div class="uptime"><small>UPTIME</small><b class="jsUp">00:00:00</b></div>' +
+        '</div>' +
+        '<div class="chips" id="chips"></div>' +
+      '</div>';
+  }
+
+  /* ---------- text ---------- */
+  Array.prototype.forEach.call(document.querySelectorAll('.jsName'), function (el) { el.textContent = cfg.name; });
+  var modeEl = document.getElementById('mode'), goalEl = document.getElementById('goal');
+  if (modeEl) modeEl.innerHTML = '<b>▸</b> ' + esc(cfg.mode);
+  if (goalEl) goalEl.textContent = cfg.goal;
+  if (!cfg.top && !cfg.vertical) document.getElementById('topBand').style.display = 'none';
+
+  document.getElementById('chips').innerHTML = cfg.platforms.map(function (p) {
+    return '<span class="chip">' + esc(p) + '</span>';
+  }).join('');
+
+  /* ---------- ticker ---------- */
+  var ticker = document.getElementById('ticker');
+  var nodes = cfg.msgs.map(function (m) {
+    var d = document.createElement('div');
+    d.className = 'msg';
+    d.innerHTML = safeMsg(m);
+    ticker.appendChild(d);
+    return d;
+  });
+  var mi = 0;
+  nodes[0].classList.add('on');
+  if (nodes.length > 1) {
+    setInterval(function () {
+      nodes[mi].classList.remove('on');
+      mi = (mi + 1) % nodes.length;
+      nodes[mi].classList.add('on');
+    }, 8000);
+  }
+
+  /* ---------- uptime (counts from when the source loads) ---------- */
+  var start = Date.now();
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var upEls = document.querySelectorAll('.jsUp');
+  var tick = function () {
+    var s = Math.floor((Date.now() - start) / 1000);
+    var txt = pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s / 60) % 60) + ':' + pad(s % 60);
+    Array.prototype.forEach.call(upEls, function (el) { el.textContent = txt; });
+  };
+  tick(); setInterval(tick, 1000);
+
+  /* ---------- kill counter (OBS: right-click source -> Interact) ---------- */
+  var KEY = 'zz-overlay-kills';
+  var kills = 0;
+  try { kills = parseInt(localStorage.getItem(KEY), 10) || 0; } catch (e) {}
+  var kEl = document.getElementById('kills'), nEl = document.getElementById('killN');
+  var show = function (animate) {
+    nEl.textContent = kills;
+    try { localStorage.setItem(KEY, String(kills)); } catch (e) {}
+    if (animate) { kEl.classList.remove('bump'); void kEl.offsetWidth; kEl.classList.add('bump'); }
+  };
+  show(false);
+  kEl.addEventListener('click', function () { kills++; show(true); });
+  kEl.addEventListener('contextmenu', function (e) { e.preventDefault(); kills = Math.max(0, kills - 1); show(false); });
+  kEl.addEventListener('dblclick', function () { kills = 0; show(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '+' || e.key === '=') { kills++; show(true); }
+    else if (e.key === '-') { kills = Math.max(0, kills - 1); show(false); }
+    else if (e.key === '0') { kills = 0; show(false); }
+  });
+})();
+</script>
+</body>
+</html>
